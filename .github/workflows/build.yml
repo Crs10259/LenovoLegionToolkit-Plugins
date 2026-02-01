@@ -1,0 +1,187 @@
+name: Build Plugins
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'plugins/**'
+      - '!plugins/**/obj/**'
+      - '!plugins/**/bin/**'
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: 'Specific plugin to build (leave empty for all)'
+        required: false
+        default: ''
+      version:
+        description: 'Version for release (e.g., 1.0.0)'
+        required: false
+        default: ''
+
+env:
+  PLUGIN_REPO: Crs10259/LenovoLegionToolkit-Plugins
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Determine which plugins to build
+        id: determine-plugins
+        run: |
+          $input = "${{ github.event.inputs.plugin }}"
+          if ($input) {
+            Write-Host "Building specific plugin: $input"
+            Write-Host "plugins=$input" >> $env:GITHUB_OUTPUT
+          } else {
+            $plugins = Get-ChildItem -Path plugins -Directory -Name | Where-Object { $_ -ne 'SDK' }
+            $pluginsStr = $plugins -join ","
+            Write-Host "Building all plugins: $pluginsStr"
+            Write-Host "plugins=$pluginsStr" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Build plugins
+        run: |
+          $plugins = "${{ steps.determine-plugins.outputs.plugins }}".Split(',')
+          foreach ($plugin in $plugins) {
+            $plugin = $plugin.Trim()
+            if (-not $plugin) { continue }
+            
+            $csproj = Get-ChildItem -Path "plugins/$plugin" -Filter *.csproj -Recurse | Select-Object -First 1
+            if ($csproj) {
+              Write-Host "Building $plugin..."
+              dotnet build $csproj.FullName -c Release --nologo -v q
+              if ($LASTEXITCODE -ne 0) {
+                exit 1
+              }
+            }
+          }
+
+      - name: Create ZIP packages
+        run: |
+          $plugins = "${{ steps.determine-plugins.outputs.plugins }}".Split(',')
+          foreach ($plugin in $plugins) {
+            $plugin = $plugin.Trim()
+            if (-not $plugin) { continue }
+            
+            $zipName = "$plugin.zip"
+            Compress-Archive -Path "plugins/$plugin/*" -DestinationPath $zipName -Force
+            Write-Host "Created $zipName"
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-zips
+          path: '*.zip'
+          retention-days: 1
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-zips
+          path: .
+
+      - name: Get version
+        id: version
+        run: |
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          files: '*.zip'
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-store-json:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-zips
+          path: .
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Generate store.json
+        run: |
+          # Create PowerShell script to generate store.json
+          $script = @'
+          $zips = Get-ChildItem *.zip
+          $plugins = @()
+          
+          foreach ($zip in $zips) {
+            $name = $zip.BaseName
+            $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+            $size = $zip.Length
+            
+            # Extract version from filename or use default
+            $version = "${{ github.event.inputs.version }}"
+            
+            $plugin = @{
+              icon = "Apps24"
+              iconBackground = "#0078D4"
+              fileSize = [int]$size
+              name = $name
+              downloadUrl = "https://github.com/${{ env.PLUGIN_REPO }}/releases/download/$name-v$version/$($zip.Name)"
+              isSystemPlugin = $false
+              description = "$name plugin for Lenovo Legion Toolkit"
+              version = $version
+              changelog = "Version $version"
+              releaseDate = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+              fileHash = $hash
+              author = "Crs10259"
+              dependencies = $null
+              id = $name.ToLower()
+              tags = @("utility")
+              minimumHostVersion = "2.0.0"
+            }
+            
+            $plugins += $plugin
+          }
+          
+          $store = @{
+            plugins = $plugins
+            lastUpdated = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+            storeVersion = "1.0.0"
+          }
+          
+          $store | ConvertTo-Json -Depth 10 | Out-File store.json -Encoding utf8
+          Get-Content store.json
+          '@
+          
+          pwsh -Command $script
+
+      - name: Commit store.json update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add store.json
+          git commit -m "Update store.json for release v${{ github.event.inputs.version }}"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
