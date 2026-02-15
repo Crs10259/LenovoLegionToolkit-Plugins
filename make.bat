@@ -30,9 +30,9 @@ IF "%1"=="clean" GOTO CLEAN
 IF "%1"=="zip" GOTO CREATE_ZIPS
 
 REM Build specific plugin
-SET PLUGIN_NAME=%1
+SET PLUGIN_NAME=%~1
 SET CONFIG=Release
-IF "%2"=="d" SET CONFIG=Debug
+IF /I "%~2"=="d" SET CONFIG=Debug
 CALL :BUILD_PLUGIN "%PLUGIN_NAME%" "%CONFIG%"
 GOTO END
 
@@ -65,8 +65,8 @@ ECHO ============================================================
 GOTO END
 
 :BUILD_PLUGIN
-SET PLUGIN_NAME=%1
-SET CONFIG=%2
+SET PLUGIN_NAME=%~1
+SET CONFIG=%~2
 SET PLUGIN_DIR=plugins\%PLUGIN_NAME%
 SET PLUGIN_PROJECT=%PLUGIN_DIR%\LenovoLegionToolkit.Plugins.%PLUGIN_NAME%.csproj
 
@@ -108,7 +108,7 @@ ECHO ============================================================
 GOTO END
 
 :CREATE_ZIP
-SET PLUGIN_NAME=%1
+SET PLUGIN_NAME=%~1
 SET PLUGIN_DIR=plugins\%PLUGIN_NAME%
 SET OUTPUT_DIR=build\plugins\%PLUGIN_NAME%
 SET ZIP_NAME=%PLUGIN_NAME%.zip
@@ -148,8 +148,8 @@ ECHO ============================================================
 
 FOR %%P IN (%PLUGINS%) DO (
     SET PLUGIN_DIR=plugins\%%P
-    IF EXIST "%PLUGIN_DIR%\bin" RMDIR /S /Q "%PLUGIN_DIR%\bin"
-    IF EXIST "%PLUGIN_DIR%\obj" RMDIR /S /Q "%PLUGIN_DIR%\obj"
+    IF EXIST "!PLUGIN_DIR!\bin" RMDIR /S /Q "!PLUGIN_DIR!\bin"
+    IF EXIST "!PLUGIN_DIR!\obj" RMDIR /S /Q "!PLUGIN_DIR!\obj"
     IF EXIST "build\plugins\%%P" RMDIR /S /Q "build\plugins\%%P"
     IF EXIST "build\plugins\%%P.zip" DEL /Q "build\plugins\%%P.zip"
 )
