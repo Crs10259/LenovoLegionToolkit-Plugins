@@ -57,12 +57,13 @@ create_zip() {
     local PLUGIN_DIR="plugins/$PLUGIN_NAME"
     local OUTPUT_DIR="build/plugins/$PLUGIN_NAME"
     local ZIP_NAME="$PLUGIN_NAME.zip"
+    local ZIP_PATH="build/plugins/$ZIP_NAME"
     
     print_status "Creating $ZIP_NAME..."
     
     # Clean previous output
     rm -rf "$OUTPUT_DIR"
-    rm -f "$ZIP_NAME"
+    rm -f "$ZIP_PATH"
     
     # Create output directory
     mkdir -p "$OUTPUT_DIR"
@@ -80,10 +81,10 @@ create_zip() {
         cd - > /dev/null
     else
         print_warning "zip command not found, using PowerShell..."
-        pwsh -Command "Compress-Archive -Path '$OUTPUT_DIR/*' -DestinationPath '$ZIP_NAME' -Force"
+        pwsh -Command "Compress-Archive -Path '$OUTPUT_DIR/*' -DestinationPath '$ZIP_PATH' -Force"
     fi
     
-    print_status "Created $ZIP_NAME"
+    print_status "Created $ZIP_PATH"
 }
 
 show_help() {
@@ -143,7 +144,7 @@ case "$1" in
             rm -rf "plugins/$PLUGIN/bin"
             rm -rf "plugins/$PLUGIN/obj"
             rm -rf "build/plugins/$PLUGIN"
-            rm -f "$PLUGIN.zip"
+            rm -f "build/plugins/$PLUGIN.zip"
         done
         rm -rf "build"
         print_status "All build outputs cleaned!"
